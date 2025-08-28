@@ -36,6 +36,7 @@ except ImportError:
     st.warning("DashScope not installed, will use OpenAI DALL-E as fallback")
 
 # API配置信息 - 多个API密钥用于增强并发能力
+# DALL-E API密钥（目前未使用，保留备用）
 API_KEYS = [
     "sk-lNVAREVHjj386FDCd9McOL7k66DZCUkTp6IbV0u9970qqdlg",
     "sk-y8x6LH0zdtyQncT0aYdUW7eJZ7v7cuKTp90L7TiK3rPu3fAg", 
@@ -55,12 +56,19 @@ GPT4O_MINI_API_KEYS = [
 ]
 GPT4O_MINI_BASE_URL = "https://api.deepbricks.ai/v1/"
 
-# 阿里云DashScope API配置
-DASHSCOPE_API_KEY = "sk-51a3e204ed83484db3b44e12d81c143e"
+# 阿里云DashScope API配置 - 多个密钥用于增强并发能力
+DASHSCOPE_API_KEYS = [
+    "sk-1a19e43ed59443ae86c39041a194c17c",
+    "sk-787d18eec7c2403ca5bcf4595cfff038", 
+    "sk-51a3e204ed83484db3b44e12d81c143e",
+    "sk-3f579673c4724c06a680f80246c2c90e",
+    "sk-4ff1a99e019d4a25bef0762e716a55d5"
+]
 
 # API密钥轮询计数器
 _api_key_counter = 0
 _gpt4o_api_key_counter = 0
+_dashscope_api_key_counter = 0
 _api_lock = threading.Lock()
 
 def get_next_api_key():
@@ -77,6 +85,14 @@ def get_next_gpt4o_api_key():
     with _api_lock:
         key = GPT4O_MINI_API_KEYS[_gpt4o_api_key_counter % len(GPT4O_MINI_API_KEYS)]
         _gpt4o_api_key_counter += 1
+        return key
+
+def get_next_dashscope_api_key():
+    """获取下一个DashScope API密钥（轮询方式）"""
+    global _dashscope_api_key_counter
+    with _api_lock:
+        key = DASHSCOPE_API_KEYS[_dashscope_api_key_counter % len(DASHSCOPE_API_KEYS)]
+        _dashscope_api_key_counter += 1
         return key
 
 def make_background_transparent(image, threshold=100):
@@ -296,7 +312,10 @@ def is_valid_logo(image, min_colors=3, min_non_transparent_pixels=1000):
         return False
 
 def generate_vector_image(prompt, background_color=None, max_retries=3):
-    """Generate a vector-style logo with transparent background using DashScope API with validation and retry"""
+    """Generate a vector-style logo with transparent background using DashScope API with validation and retry
+    
+    使用轮询机制从5个DashScope API密钥中选择，支持并行生成提高效率
+    """
     
     # 构建矢量图logo专用的提示词
     vector_style_prompt = f"""创建一个矢量风格的logo设计: {prompt}
@@ -331,8 +350,12 @@ def generate_vector_image(prompt, background_color=None, max_retries=3):
             else:
                 retry_prompt = vector_style_prompt
             
+            # 获取下一个DashScope API密钥用于当前请求
+            current_api_key = get_next_dashscope_api_key()
+            print(f'使用DashScope API密钥: {current_api_key[:20]}...{current_api_key[-10:]}')
+            
             rsp = ImageSynthesis.call(
-                api_key=DASHSCOPE_API_KEY,
+                api_key=current_api_key,
                 model="wanx2.0-t2i-turbo",
                 prompt=retry_prompt,
                 n=1,
